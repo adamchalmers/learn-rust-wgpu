@@ -4,6 +4,13 @@ use winit::{
     window::{Window, WindowBuilder},
 };
 
+const BLUE: wgpu::Color = wgpu::Color {
+    r: 0.1,
+    g: 0.2,
+    b: 0.3,
+    a: 1.0,
+};
+
 struct State {
     surface: wgpu::Surface,
     device: wgpu::Device,
@@ -11,6 +18,7 @@ struct State {
     config: wgpu::SurfaceConfiguration,
     size: winit::dpi::PhysicalSize<u32>,
     window: Window,
+    color: wgpu::Color,
 }
 
 impl State {
@@ -94,6 +102,7 @@ impl State {
             queue,
             config,
             size,
+            color: BLUE,
         }
     }
 
@@ -151,12 +160,7 @@ impl State {
                     // What to do with the colours on the screen.
                     ops: wgpu::Operations {
                         // 'load' field is what to do with colours stored from previous frame.
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: 0.1,
-                            g: 0.2,
-                            b: 0.3,
-                            a: 1.0,
-                        }),
+                        load: wgpu::LoadOp::Clear(self.color),
                         store: true,
                     },
                 })],
@@ -218,11 +222,19 @@ pub async fn run() {
                     WindowEvent::Resized(physical_size) => {
                         state.resize(*physical_size);
                     }
-                    WindowEvent::ScaleFactorChanged {
-                        scale_factor: _,
-                        new_inner_size,
-                    } => {
+                    WindowEvent::ScaleFactorChanged { new_inner_size, .. } => {
                         state.resize(**new_inner_size);
+                    }
+
+                    // Mouse movement
+                    WindowEvent::CursorMoved { position, .. } => {
+                        let percent_of_screen_width = position.x / state.size.width as f64;
+                        let percent_of_screen_height = position.y / state.size.height as f64;
+                        state.color = wgpu::Color {
+                            r: percent_of_screen_width as f64,
+                            g: percent_of_screen_height as f64,
+                            ..state.color
+                        };
                     }
 
                     _ => {}
