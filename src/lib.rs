@@ -19,46 +19,33 @@ const G: [f32; 3] = [0.0, 1.0, 0.0];
 const B: [f32; 3] = [0.0, 0.0, 1.0];
 
 const VERTICES: &[Vertex] = &[
-    // A
     Vertex {
-        position: [0.0, 0.5, 0.0],
-        color_of: R,
-    },
-    // B
+        position: [-0.0868241, 0.49240386, 0.0],
+        tex_coords: [0.4131759, 0.99240386],
+    }, // A
     Vertex {
-        position: [-0.25, 0.0, 0.0],
-        color_of: G,
-    },
-    // C
+        position: [-0.49513406, 0.06958647, 0.0],
+        tex_coords: [0.0048659444, 0.56958647],
+    }, // B
     Vertex {
-        position: [0.25, 0.0, 0.0],
-        color_of: B,
-    },
-    // D
+        position: [-0.21918549, -0.44939706, 0.0],
+        tex_coords: [0.28081453, 0.05060294],
+    }, // C
     Vertex {
-        position: [-0.5, -0.5, 0.0],
-        color_of: R,
-    },
-    // E
+        position: [0.35966998, -0.3473291, 0.0],
+        tex_coords: [0.85967, 0.1526709],
+    }, // D
     Vertex {
-        position: [0.0, -0.5, 0.0],
-        color_of: G,
-    },
-    // F
-    Vertex {
-        position: [0.5, -0.5, 0.0],
-        color_of: B,
-    },
+        position: [0.44147372, 0.2347359, 0.0],
+        tex_coords: [0.9414737, 0.7347359],
+    }, // E
 ];
 
 #[rustfmt::skip]
 const INDICES: &[u16] = &[
-    // ABC
-    0, 1, 2, 
-    // BDE
-    1, 3, 4,
-    // CEF
-    2, 4, 5,
+    0, 1, 4,
+    1, 2, 4,
+    2, 3, 4,
 ];
 
 struct State {
@@ -74,6 +61,7 @@ struct State {
     vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
     num_indices: u32,
+    diffuse_bind_group: wgpu::BindGroup,
 }
 
 impl State {
@@ -200,6 +188,67 @@ impl State {
             texture_size,
         );
 
+        // We don't need to configure the texture view much, so let's
+        // let wgpu define it.
+        let diffuse_texture_view =
+            diffuse_texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let diffuse_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Nearest,
+            mipmap_filter: wgpu::FilterMode::Nearest,
+            ..Default::default()
+        });
+
+        // How the GPU lays out the texture on its side of memory.
+        let texture_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                // This needs two entries:
+                entries: &[
+                    // Entry 0 is the sampled texture itself.
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0, // index
+                        // This binding should be visible to the fragment shader, because it's
+                        // used to colour the pixels.
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        },
+                        count: None,
+                    },
+                    // Entry 1 is the sampler.
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1, // index
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        // This should match the filterable field of the
+                        // corresponding Texture entry above.
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        count: None,
+                    },
+                ],
+                label: Some("texture_bind_group_layout"),
+            });
+
+        // Conforms to the Bind Group Layout defined above.
+        let diffuse_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &texture_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&diffuse_texture_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&diffuse_sampler),
+                },
+            ],
+            label: Some("diffuse_bind_group"),
+        });
+
         let boring_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Boring Shader"),
             source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
@@ -208,7 +257,7 @@ impl State {
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Render Pipeline Layout"),
-                bind_group_layouts: &[],
+                bind_group_layouts: &[&texture_bind_group_layout],
                 push_constant_ranges: &[],
             });
 
@@ -244,6 +293,7 @@ impl State {
             vertex_buffer,
             index_buffer,
             num_indices: INDICES.len() as u32,
+            diffuse_bind_group,
         }
     }
 
@@ -309,6 +359,7 @@ impl State {
             });
 
             render_pass.set_pipeline(&self.render_pipelines[self.active_pipeline]);
+            render_pass.set_bind_group(0, &self.diffuse_bind_group, &[]);
             let buffer_slot = 0;
             render_pass.set_vertex_buffer(buffer_slot, self.vertex_buffer.slice(..));
             render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
@@ -384,7 +435,7 @@ fn create_pipeline(
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 struct Vertex {
     position: [f32; 3],
-    color_of: [f32; 3],
+    tex_coords: [f32; 2], // NEW!
 }
 
 impl Vertex {
@@ -413,7 +464,7 @@ impl Vertex {
                     offset: std::mem::size_of::<[f32; 3]>() as wgpu::BufferAddress,
                     // Store in @location(1)
                     shader_location: 1,
-                    format: wgpu::VertexFormat::Float32x3,
+                    format: wgpu::VertexFormat::Float32x2,
                 },
             ],
         }
