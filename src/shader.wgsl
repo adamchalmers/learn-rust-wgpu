@@ -21,6 +21,6 @@ fn vs_main(
 // location(0) tells WGPU to store the return value in "the first color target"???
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> { 
-    // Set color of current fragment to brown.
-    return vec4<f32>(0.3, 0.2, 0.1, 1.0);
+    // Set color of current fragment to pink-orange.
+    return vec4<f32>(1.0, 0.2, 0.1, 1.0);
 }

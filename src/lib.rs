@@ -15,7 +15,7 @@ struct State {
     surface: wgpu::Surface,
     device: wgpu::Device,
     queue: wgpu::Queue,
-    config: wgpu::SurfaceConfiguration,
+    surface_config: wgpu::SurfaceConfiguration,
     size: winit::dpi::PhysicalSize<u32>,
     window: Window,
     color: wgpu::Color,
@@ -81,7 +81,7 @@ impl State {
             .unwrap_or(surface_caps.formats[0]);
 
         // Defines how surface creates its underlying SurfaceTextures.
-        let config = wgpu::SurfaceConfiguration {
+        let surface_config = wgpu::SurfaceConfiguration {
             // How will the SurfaceTexture be used? They'll be used to write to the screen.
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             // How will they be stored on the GPU.
@@ -94,7 +94,7 @@ impl State {
             alpha_mode: surface_caps.alpha_modes[0],
             view_formats: vec![],
         };
-        surface.configure(&device, &config);
+        surface.configure(&device, &surface_config);
 
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Shader"),
@@ -115,7 +115,7 @@ impl State {
                 module: &shader,
                 entry_point: "vs_main",
                 // What type of vertices you're going to pass to the vertex shader.
-                // OUr shader specifies the vertices in its definition, so this is unnecessary.
+                // Our shader specifies the vertices in its definition, so this is unnecessary.
                 buffers: &[],
             },
             // Stores color data in the `surface`.
@@ -126,7 +126,7 @@ impl State {
                 targets: &[
                     // We only need one colour output, the `surface`.
                     Some(wgpu::ColorTargetState {
-                        format: config.format,
+                        format: surface_config.format,
                         // Replace old pixel data with new data. I guess other alternatives would be
                         // 'blend them together' somehow.
                         blend: Some(wgpu::BlendState::REPLACE),
@@ -165,7 +165,7 @@ impl State {
             surface,
             device,
             queue,
-            config,
+            surface_config,
             size,
             color: BLUE,
             render_pipeline,
@@ -179,9 +179,9 @@ impl State {
     fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
         if new_size.width > 0 && new_size.height > 0 {
             self.size = new_size;
-            self.config.width = new_size.width;
-            self.config.height = new_size.height;
-            self.surface.configure(&self.device, &self.config);
+            self.surface_config.width = new_size.width;
+            self.surface_config.height = new_size.height;
+            self.surface.configure(&self.device, &self.surface_config);
         }
     }
 
@@ -213,8 +213,8 @@ impl State {
                 label: Some("Render Encoder"),
             });
 
-        // Clear the screen. Start a new block so that begin_render_pass (which holds &mut)
-        // is dropped so that encoder can finish.
+        // Clear the screen. Start a new block, because `render_pass` holds a &mut to `encoder`.
+        // This way when render_pass is dropped, encoder becomes usable again.
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Render Pass"),
