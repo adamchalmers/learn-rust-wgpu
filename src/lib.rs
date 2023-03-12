@@ -19,7 +19,8 @@ struct State {
     size: winit::dpi::PhysicalSize<u32>,
     window: Window,
     color: wgpu::Color,
-    render_pipeline: wgpu::RenderPipeline,
+    render_pipelines: Vec<wgpu::RenderPipeline>,
+    active_pipeline: usize,
 }
 
 impl State {
@@ -96,9 +97,14 @@ impl State {
         };
         surface.configure(&device, &surface_config);
 
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("Shader"),
+        let boring_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("Boring Shader"),
             source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
+        });
+
+        let fancy_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("Fancy Shader"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("challenge.wgsl").into()),
         });
 
         let render_pipeline_layout =
@@ -108,57 +114,20 @@ impl State {
                 push_constant_ranges: &[],
             });
 
-        let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("Render Pipeline"),
-            layout: Some(&render_pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: "vs_main",
-                // What type of vertices you're going to pass to the vertex shader.
-                // Our shader specifies the vertices in its definition, so this is unnecessary.
-                buffers: &[],
-            },
-            // Stores color data in the `surface`.
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: "fs_main",
-                // What colour outputs it should set up.
-                targets: &[
-                    // We only need one colour output, the `surface`.
-                    Some(wgpu::ColorTargetState {
-                        format: surface_config.format,
-                        // Replace old pixel data with new data. I guess other alternatives would be
-                        // 'blend them together' somehow.
-                        blend: Some(wgpu::BlendState::REPLACE),
-                        write_mask: wgpu::ColorWrites::ALL,
-                    }),
-                ],
-            }),
-            primitive: wgpu::PrimitiveState {
-                // i.e. every 3 vertices corresponds to one triangle.
-                topology: wgpu::PrimitiveTopology::TriangleList,
-                strip_index_format: None,
-                // How wgpu should tell if a given triangle is facing forwards or not.
-                // CCW means it's facing forwards if vertices are arranged counter-clockwise.
-                front_face: wgpu::FrontFace::Ccw,
-                // What to cull (i.e. not draw). Anything facing backwards.
-                cull_mode: Some(wgpu::Face::Back),
-                polygon_mode: wgpu::PolygonMode::Fill,
-                unclipped_depth: false,
-                conservative: false,
-            },
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState {
-                // How many samples the pipeline will use
-                count: 1,
-                // Which samples should be active? All of them.
-                mask: !0,
-                // For antialiasing.
-                alpha_to_coverage_enabled: false,
-            },
-            // How many array layers the render attachments can have. Not using this.
-            multiview: None,
-        });
+        let render_pipelines = vec![
+            create_pipeline(
+                &device,
+                &render_pipeline_layout,
+                &boring_shader,
+                &surface_config,
+            ),
+            create_pipeline(
+                &device,
+                &render_pipeline_layout,
+                &fancy_shader,
+                &surface_config,
+            ),
+        ];
 
         Self {
             window,
@@ -168,7 +137,8 @@ impl State {
             surface_config,
             size,
             color: BLUE,
-            render_pipeline,
+            render_pipelines,
+            active_pipeline: Default::default(),
         }
     }
 
@@ -233,7 +203,7 @@ impl State {
                 depth_stencil_attachment: None,
             });
 
-            render_pass.set_pipeline(&self.render_pipeline);
+            render_pass.set_pipeline(&self.render_pipelines[self.active_pipeline]);
             // Draw something with 3 vertices and 1 instance.
             render_pass.draw(0..3, 0..1);
         }
@@ -245,10 +215,72 @@ impl State {
     }
 }
 
+fn create_pipeline(
+    device: &wgpu::Device,
+    render_pipeline_layout: &wgpu::PipelineLayout,
+    shader: &wgpu::ShaderModule,
+    surface_config: &wgpu::SurfaceConfiguration,
+) -> wgpu::RenderPipeline {
+    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some("Render Pipeline"),
+        layout: Some(render_pipeline_layout),
+        vertex: wgpu::VertexState {
+            module: shader,
+            entry_point: "vs_main",
+            // What type of vertices you're going to pass to the vertex shader.
+            // Our shader specifies the vertices in its definition, so this is unnecessary.
+            buffers: &[],
+        },
+        // Stores color data in the `surface`.
+        fragment: Some(wgpu::FragmentState {
+            module: shader,
+            entry_point: "fs_main",
+            // What colour outputs it should set up.
+            targets: &[
+                // We only need one colour output, the `surface`.
+                Some(wgpu::ColorTargetState {
+                    format: surface_config.format,
+                    // Replace old pixel data with new data. I guess other alternatives would be
+                    // 'blend them together' somehow.
+                    blend: Some(wgpu::BlendState::REPLACE),
+                    write_mask: wgpu::ColorWrites::ALL,
+                }),
+            ],
+        }),
+        primitive: wgpu::PrimitiveState {
+            // i.e. every 3 vertices corresponds to one triangle.
+            topology: wgpu::PrimitiveTopology::TriangleList,
+            strip_index_format: None,
+            // How wgpu should tell if a given triangle is facing forwards or not.
+            // CCW means it's facing forwards if vertices are arranged counter-clockwise.
+            front_face: wgpu::FrontFace::Ccw,
+            // What to cull (i.e. not draw). Anything facing backwards.
+            cull_mode: Some(wgpu::Face::Back),
+            polygon_mode: wgpu::PolygonMode::Fill,
+            unclipped_depth: false,
+            conservative: false,
+        },
+        depth_stencil: None,
+        multisample: wgpu::MultisampleState {
+            // How many samples the pipeline will use
+            count: 1,
+            // Which samples should be active? All of them.
+            mask: !0,
+            // For antialiasing.
+            alpha_to_coverage_enabled: false,
+        },
+        // How many array layers the render attachments can have. Not using this.
+        multiview: None,
+    })
+}
+
 pub async fn run() {
     env_logger::init();
     let event_loop = EventLoop::new();
-    let window = WindowBuilder::new().build(&event_loop).unwrap();
+    let window = WindowBuilder::new()
+        .with_title("Adam GPU Demo")
+        .build(&event_loop)
+        .unwrap();
     let mut state = State::new(window).await;
 
     event_loop.run(move |event, _, control_flow| match event {
@@ -288,6 +320,19 @@ pub async fn run() {
                         ..
                     } => *control_flow = ControlFlow::Exit,
 
+                    WindowEvent::KeyboardInput {
+                        input:
+                            KeyboardInput {
+                                state: ElementState::Pressed,
+                                virtual_keycode: Some(VirtualKeyCode::Space),
+                                ..
+                            },
+                        ..
+                    } => {
+                        state.active_pipeline += 1;
+                        state.active_pipeline %= state.render_pipelines.len();
+                    }
+
                     // Resize events.
                     WindowEvent::Resized(physical_size) => {
                         state.resize(*physical_size);
@@ -301,8 +346,8 @@ pub async fn run() {
                         let percent_of_screen_width = position.x / state.size.width as f64;
                         let percent_of_screen_height = position.y / state.size.height as f64;
                         state.color = wgpu::Color {
-                            r: percent_of_screen_width as f64,
-                            g: percent_of_screen_height as f64,
+                            r: percent_of_screen_width,
+                            g: percent_of_screen_height,
                             ..state.color
                         };
                     }
