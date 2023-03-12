@@ -12,19 +12,51 @@ const BLUE: wgpu::Color = wgpu::Color {
     a: 1.0,
 };
 
+const R: [f32; 3] = [1.0, 0.0, 0.0];
+const G: [f32; 3] = [0.0, 1.0, 0.0];
+const B: [f32; 3] = [0.0, 0.0, 1.0];
+
 const VERTICES: &[Vertex] = &[
+    // A
     Vertex {
         position: [0.0, 0.5, 0.0],
-        color_of: [1.0, 0.0, 0.0],
+        color_of: R,
     },
+    // B
+    Vertex {
+        position: [-0.25, 0.0, 0.0],
+        color_of: G,
+    },
+    // C
+    Vertex {
+        position: [0.25, 0.0, 0.0],
+        color_of: B,
+    },
+    // D
     Vertex {
         position: [-0.5, -0.5, 0.0],
-        color_of: [0.0, 1.0, 0.0],
+        color_of: R,
     },
+    // E
+    Vertex {
+        position: [0.0, -0.5, 0.0],
+        color_of: G,
+    },
+    // F
     Vertex {
         position: [0.5, -0.5, 0.0],
-        color_of: [0.0, 0.0, 1.0],
+        color_of: B,
     },
+];
+
+#[rustfmt::skip]
+const INDICES: &[u16] = &[
+    // ABC
+    0, 1, 2, 
+    // BDE
+    1, 3, 4,
+    // CEF
+    2, 4, 5,
 ];
 
 struct State {
@@ -38,7 +70,8 @@ struct State {
     render_pipelines: Vec<wgpu::RenderPipeline>,
     active_pipeline: usize,
     vertex_buffer: wgpu::Buffer,
-    num_vertices: u32,
+    index_buffer: wgpu::Buffer,
+    num_indices: u32,
 }
 
 impl State {
@@ -140,6 +173,12 @@ impl State {
             usage: wgpu::BufferUsages::VERTEX,
         });
 
+        let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Index Buffer"),
+            contents: bytemuck::cast_slice(INDICES),
+            usage: wgpu::BufferUsages::INDEX,
+        });
+
         Self {
             window,
             surface,
@@ -151,7 +190,8 @@ impl State {
             render_pipelines,
             active_pipeline: 0,
             vertex_buffer,
-            num_vertices: VERTICES.len() as u32,
+            index_buffer,
+            num_indices: INDICES.len() as u32,
         }
     }
 
@@ -219,7 +259,8 @@ impl State {
             render_pass.set_pipeline(&self.render_pipelines[self.active_pipeline]);
             let buffer_slot = 0;
             render_pass.set_vertex_buffer(buffer_slot, self.vertex_buffer.slice(..));
-            render_pass.draw(0..self.num_vertices, 0..1);
+            render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+            render_pass.draw_indexed(0..self.num_indices, 0, 0..1);
         }
 
         // Submit the cmdbuf to the GPU.
