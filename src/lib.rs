@@ -1,3 +1,4 @@
+use wgpu::util::DeviceExt;
 use winit::{
     event::*,
     event_loop::{ControlFlow, EventLoop},
@@ -11,6 +12,21 @@ const BLUE: wgpu::Color = wgpu::Color {
     a: 1.0,
 };
 
+const VERTICES: &[Vertex] = &[
+    Vertex {
+        position: [0.0, 0.5, 0.0],
+        color_of: [1.0, 0.0, 0.0],
+    },
+    Vertex {
+        position: [-0.5, -0.5, 0.0],
+        color_of: [0.0, 1.0, 0.0],
+    },
+    Vertex {
+        position: [0.5, -0.5, 0.0],
+        color_of: [0.0, 0.0, 1.0],
+    },
+];
+
 struct State {
     surface: wgpu::Surface,
     device: wgpu::Device,
@@ -21,6 +37,8 @@ struct State {
     color: wgpu::Color,
     render_pipelines: Vec<wgpu::RenderPipeline>,
     active_pipeline: usize,
+    vertex_buffer: wgpu::Buffer,
+    num_vertices: u32,
 }
 
 impl State {
@@ -102,11 +120,6 @@ impl State {
             source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
         });
 
-        let fancy_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("Fancy Shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("challenge.wgsl").into()),
-        });
-
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Render Pipeline Layout"),
@@ -114,20 +127,18 @@ impl State {
                 push_constant_ranges: &[],
             });
 
-        let render_pipelines = vec![
-            create_pipeline(
-                &device,
-                &render_pipeline_layout,
-                &boring_shader,
-                &surface_config,
-            ),
-            create_pipeline(
-                &device,
-                &render_pipeline_layout,
-                &fancy_shader,
-                &surface_config,
-            ),
-        ];
+        let render_pipelines = vec![create_pipeline(
+            &device,
+            &render_pipeline_layout,
+            &boring_shader,
+            &surface_config,
+        )];
+
+        let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Vertex Buffer"),
+            contents: bytemuck::cast_slice(VERTICES),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
 
         Self {
             window,
@@ -138,7 +149,9 @@ impl State {
             size,
             color: BLUE,
             render_pipelines,
-            active_pipeline: Default::default(),
+            active_pipeline: 0,
+            vertex_buffer,
+            num_vertices: VERTICES.len() as u32,
         }
     }
 
@@ -204,8 +217,9 @@ impl State {
             });
 
             render_pass.set_pipeline(&self.render_pipelines[self.active_pipeline]);
-            // Draw something with 3 vertices and 1 instance.
-            render_pass.draw(0..3, 0..1);
+            let buffer_slot = 0;
+            render_pass.set_vertex_buffer(buffer_slot, self.vertex_buffer.slice(..));
+            render_pass.draw(0..self.num_vertices, 0..1);
         }
 
         // Submit the cmdbuf to the GPU.
@@ -227,9 +241,8 @@ fn create_pipeline(
         vertex: wgpu::VertexState {
             module: shader,
             entry_point: "vs_main",
-            // What type of vertices you're going to pass to the vertex shader.
-            // Our shader specifies the vertices in its definition, so this is unnecessary.
-            buffers: &[],
+            // Define how the vertex buffer is laid out.
+            buffers: &[Vertex::descriptor()],
         },
         // Stores color data in the `surface`.
         fragment: Some(wgpu::FragmentState {
@@ -272,6 +285,46 @@ fn create_pipeline(
         // How many array layers the render attachments can have. Not using this.
         multiview: None,
     })
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+struct Vertex {
+    position: [f32; 3],
+    color_of: [f32; 3],
+}
+
+impl Vertex {
+    /// How does the vertex buffer's internal layout correspond to a set of these Vertices?
+    /// Note this is pretty verbose, a macro `vertex_attr_array` exists to help.
+    fn descriptor<'a>() -> wgpu::VertexBufferLayout<'a> {
+        wgpu::VertexBufferLayout {
+            /// How many bytes are in each element of the array
+            array_stride: std::mem::size_of::<Vertex>() as wgpu::BufferAddress,
+            /// Do you increment the array index per-vertex or per-instance?
+            /// I don't know what instances are yet, so, vertices here.
+            step_mode: wgpu::VertexStepMode::Vertex,
+            /// Maps attributes of the struct to locations in each element of the buffer.
+            attributes: &[
+                wgpu::VertexAttribute {
+                    // Where the attribute starts.
+                    offset: 0,
+                    // In WGSL each attribute has a 'location' (analogous to protobuf's field number)
+                    // This describes which location number the given attribute corresponds to.
+                    shader_location: 0,
+                    // Internal format of the attribute
+                    format: wgpu::VertexFormat::Float32x3,
+                },
+                wgpu::VertexAttribute {
+                    // Offset after the [f32; 3] used for the previous attribute
+                    offset: std::mem::size_of::<[f32; 3]>() as wgpu::BufferAddress,
+                    // Store in @location(1)
+                    shader_location: 1,
+                    format: wgpu::VertexFormat::Float32x3,
+                },
+            ],
+        }
+    }
 }
 
 pub async fn run() {
