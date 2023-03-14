@@ -64,12 +64,12 @@ struct State {
     window: Window,
     color: wgpu::Color,
     render_pipelines: Vec<wgpu::RenderPipeline>,
-    active_pipeline: usize,
+    active_texture: usize,
     vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
     num_indices: u32,
     diffuse_bind_group: wgpu::BindGroup,
-    diffuse_texture: crate::texture::Texture,
+    diffuse_textures: Vec<crate::texture::Texture>,
 }
 
 impl State {
@@ -146,10 +146,22 @@ impl State {
         };
         surface.configure(&device, &surface_config);
 
-        let diffuse_bytes = include_bytes!("gold.png");
-        let diffuse_texture =
-            crate::texture::Texture::from_bytes(&device, &queue, diffuse_bytes, "gold.png")
-                .unwrap();
+        let diffuse_textures = vec![
+            crate::texture::Texture::from_bytes(
+                &device,
+                &queue,
+                include_bytes!("gold.png"),
+                "gold.png",
+            )
+            .unwrap(),
+            crate::texture::Texture::from_bytes(
+                &device,
+                &queue,
+                include_bytes!("rusted_copper.jpg"),
+                "rusted_copper.jpg",
+            )
+            .unwrap(),
+        ];
 
         // How the GPU lays out the texture on its side of memory.
         let texture_bind_group_layout =
@@ -178,6 +190,27 @@ impl State {
                         ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                         count: None,
                     },
+                    // Entry 2/3 are like 0/1
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 2, // index
+                        // This binding should be visible to the fragment shader, because it's
+                        // used to colour the pixels.
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 3, // index
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        // This should match the filterable field of the
+                        // corresponding Texture entry above.
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        count: None,
+                    },
                 ],
                 label: Some("texture_bind_group_layout"),
             });
@@ -188,11 +221,19 @@ impl State {
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&diffuse_texture.view),
+                    resource: wgpu::BindingResource::TextureView(&diffuse_textures[0].view),
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&diffuse_texture.sampler),
+                    resource: wgpu::BindingResource::Sampler(&diffuse_textures[0].sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::TextureView(&diffuse_textures[1].view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: wgpu::BindingResource::Sampler(&diffuse_textures[1].sampler),
                 },
             ],
             label: Some("diffuse_bind_group"),
@@ -238,12 +279,12 @@ impl State {
             size,
             color: BLUE,
             render_pipelines,
-            active_pipeline: 0,
+            active_texture: 0,
             vertex_buffer,
             index_buffer,
             num_indices: INDICES.len() as u32,
             diffuse_bind_group,
-            diffuse_texture,
+            diffuse_textures,
         }
     }
 
@@ -308,7 +349,7 @@ impl State {
                 depth_stencil_attachment: None,
             });
 
-            render_pass.set_pipeline(&self.render_pipelines[self.active_pipeline]);
+            render_pass.set_pipeline(&self.render_pipelines[self.active_texture]);
             render_pass.set_bind_group(0, &self.diffuse_bind_group, &[]);
             let buffer_slot = 0;
             render_pass.set_vertex_buffer(buffer_slot, self.vertex_buffer.slice(..));
@@ -476,8 +517,8 @@ pub async fn run() {
                             },
                         ..
                     } => {
-                        state.active_pipeline += 1;
-                        state.active_pipeline %= state.render_pipelines.len();
+                        state.active_texture += 1;
+                        state.active_texture %= state.render_pipelines.len();
                     }
 
                     // Resize events.
