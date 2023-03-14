@@ -13,33 +13,46 @@ const BLUE: wgpu::Color = wgpu::Color {
 };
 
 const VERTICES: &[Vertex] = &[
+    // A
     Vertex {
-        position: [-0.0868241, 0.49240386, 0.0],
-        tex_coords: [0.4131759, 1.0 - 0.99240386],
-    }, // A
+        position: [0.0, 0.5, 0.0],
+        tex_coords: [0.4131759, 0.99240386],
+    },
+    // B
     Vertex {
-        position: [-0.49513406, 0.06958647, 0.0],
-        tex_coords: [0.0048659444, 1.0 - 0.56958647],
-    }, // B
+        position: [-0.25, 0.0, 0.0],
+        tex_coords: [0.0048659444, 0.56958647],
+    },
+    // C
     Vertex {
-        position: [-0.21918549, -0.44939706, 0.0],
-        tex_coords: [0.28081453, 1.0 - 0.05060294],
-    }, // C
+        position: [0.25, 0.0, 0.0],
+        tex_coords: [0.28081453, 0.05060294],
+    },
+    // D
     Vertex {
-        position: [0.35966998, -0.3473291, 0.0],
-        tex_coords: [0.85967, 1.0 - 0.1526709],
-    }, // D
+        position: [-0.5, -0.5, 0.0],
+        tex_coords: [0.4131759, 0.99240386],
+    },
+    // E
     Vertex {
-        position: [0.44147372, 0.2347359, 0.0],
-        tex_coords: [0.9414737, 1.0 - 0.7347359],
-    }, // E
+        position: [0.0, -0.5, 0.0],
+        tex_coords: [0.85967, 0.1526709],
+    },
+    // F
+    Vertex {
+        position: [0.5, -0.5, 0.0],
+        tex_coords: [0.9414737, 0.7347359],
+    },
 ];
 
 #[rustfmt::skip]
 const INDICES: &[u16] = &[
-    0, 1, 4,
-    1, 2, 4,
-    2, 3, 4,
+    // ABC
+    0, 1, 2, 
+    // BDE
+    1, 3, 4,
+    // CEF
+    2, 4, 5,
 ];
 
 struct State {
@@ -133,9 +146,9 @@ impl State {
         };
         surface.configure(&device, &surface_config);
 
-        let diffuse_bytes = include_bytes!("tree.png");
+        let diffuse_bytes = include_bytes!("gold.png");
         let diffuse_texture =
-            crate::texture::Texture::from_bytes(&device, &queue, diffuse_bytes, "tree.png")
+            crate::texture::Texture::from_bytes(&device, &queue, diffuse_bytes, "gold.png")
                 .unwrap();
 
         // How the GPU lays out the texture on its side of memory.
